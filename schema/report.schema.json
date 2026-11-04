@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "report.schema.json",
+  "title": "Reels Analyzer report",
+  "description": "The one JSON object a model or agent writes for a reel (AIInsights in src/types/analysis.ts). How to write it: prompts/system.md. The app computes the virality score, reach, engagement and the verdict band itself, so they never appear here. performanceReview is required only when the reel's real stats were given.",
+  "type": "object",
+  "required": [
+    "metrics",
+    "summary",
+    "hookVerdict",
+    "strengths",
+    "improvements",
+    "recommendations",
+    "metricAdvice",
+    "suggestedCaption",
+    "hashtags",
+    "transcript",
+    "hookTranscript"
+  ],
+  "properties": {
+    "metrics": { "$ref": "#/$defs/metrics" },
+    "summary": { "$ref": "#/$defs/paragraph" },
+    "hookVerdict": { "$ref": "#/$defs/line" },
+    "strengths": { "type": "array", "minItems": 3, "maxItems": 5, "items": { "$ref": "#/$defs/line" } },
+    "improvements": { "type": "array", "minItems": 3, "maxItems": 5, "items": { "$ref": "#/$defs/line" } },
+    "recommendations": { "type": "array", "minItems": 6, "maxItems": 6, "items": { "$ref": "#/$defs/line" } },
+    "metricAdvice": {
+      "type": "object",
+      "required": ["hookStrength", "visualQuality", "pacing", "trendingElements", "engagementCTA", "rewatchPotential"],
+      "properties": {
+        "hookStrength": { "$ref": "#/$defs/advice" },
+        "visualQuality": { "$ref": "#/$defs/advice" },
+        "pacing": { "$ref": "#/$defs/advice" },
+        "trendingElements": { "$ref": "#/$defs/advice" },
+        "engagementCTA": { "$ref": "#/$defs/advice" },
+        "rewatchPotential": { "$ref": "#/$defs/advice" }
+      }
+    },
+    "suggestedCaption": { "$ref": "#/$defs/paragraph" },
+    "hashtags": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 12,
+      "items": {
+        "type": "string",
+        "maxLength": 50,
+        "pattern": "^#[\\p{L}\\p{M}\\p{N}_]+$",
+        "description": "One word starting with #: letters, digits or underscore."
+      }
+    },
+    "transcript": {
+      "type": "string",
+      "maxLength": 20000,
+      "description": "Verbatim speech in the language actually spoken: a plain string, never an {en, ar} object. Empty string when nothing is said."
+    },
+    "hookTranscript": {
+      "type": "string",
+      "maxLength": 400,
+      "description": "Verbatim words spoken or shown on screen in the first 3 seconds: a plain string, never an {en, ar} object. Empty string when there are none."
+    },
+    "performanceReview": {
+      "type": "object",
+      "required": ["verdict", "whyItHappened", "whatToDoNext"],
+      "properties": {
+        "verdict": { "type": "string", "enum": ["overperformed", "as-expected", "underperformed"] },
+        "whyItHappened": { "type": "array", "minItems": 3, "maxItems": 4, "items": { "$ref": "#/$defs/paragraph" } },
+        "whatToDoNext": { "type": "array", "minItems": 2, "maxItems": 3, "items": { "$ref": "#/$defs/line" } }
+      }
+    }
+  },
+  "$defs": {
+    "score": { "type": "integer", "minimum": 1, "maximum": 10 },
+    "metrics": {
+      "type": "object",
+      "description": "The six integer scores from 1 to 10, defined in prompts/system.md (Metrics, Calibration).",
+      "required": ["hookStrength", "visualQuality", "pacing", "trendingElements", "engagementCTA", "rewatchPotential"],
+      "properties": {
+        "hookStrength": { "$ref": "#/$defs/score" },
+        "visualQuality": { "$ref": "#/$defs/score" },
+        "pacing": { "$ref": "#/$defs/score" },
+        "trendingElements": { "$ref": "#/$defs/score" },
+        "engagementCTA": { "$ref": "#/$defs/score" },
+        "rewatchPotential": { "$ref": "#/$defs/score" }
+      }
+    },
+    "line": {
+      "type": "object",
+      "description": "The same content in English (en) and Modern Standard Arabic (ar), at most 250 characters each.",
+      "required": ["en", "ar"],
+      "properties": {
+        "en": { "type": "string", "minLength": 1, "maxLength": 250 },
+        "ar": { "type": "string", "minLength": 1, "maxLength": 250 }
+      }
+    },
+    "paragraph": {
+      "type": "object",
+      "description": "The same content in English (en) and Modern Standard Arabic (ar), at most 400 characters each.",
+      "required": ["en", "ar"],
+      "properties": {
+        "en": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "ar": { "type": "string", "minLength": 1, "maxLength": 400 }
+      }
+    },
+    "advice": { "type": "array", "minItems": 2, "maxItems": 3, "items": { "$ref": "#/$defs/line" } }
+  }
+}
