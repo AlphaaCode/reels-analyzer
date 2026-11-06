@@ -117,6 +117,23 @@ npm test                           # unit tests (Node's built-in runner)
 
 The **My Instagram** panel and the calibration engine read a local snapshot at `public/ig-cache/profile.json` (profile, follower count, and each reel's video and real stats). The app does not fetch it for you. Produce it however you like; the shape is defined in `src/components/MyInstagram.tsx`. The folder is gitignored, and so is `data/`, where analysis history and calibration results are kept.
 
+## Edit tab (optional)
+
+The Edit tab turns a report into an edited video, and it only runs if you have the [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI installed and signed in with access to `claude-opus-5-5`. The app checks this with one real call before it unlocks the tab. If the check fails the tab stays locked and the rest of the app is unaffected.
+
+How it works:
+
+1. The AI never touches the video. It writes one file, `edit-plan.json`, against [`schema/edit-plan.schema.json`](schema/edit-plan.schema.json).
+2. A checker validates the plan against the measured signals. Anything off-contract is rejected.
+3. ffmpeg renders the plan: silence trims, cuts, a re-hook, a hook text overlay, loudness normalisation, captions and punch-ins.
+4. The result is analysed again and the tab shows measured before/after differences, for example loudness from -32.4 to -14 LUFS with everything else unchanged.
+
+The plan depends on the forecast for that reel. A reel in the strongest band gets minimal edits. A mid reel gets moderate ones. Only a reel in the weakest band may be re-hooked. Until the calibration has evidence, the forecast is locked and the plan stays conservative. A re-analysis after editing is a new estimate, not proof that the edit helped.
+
+The agent runs confined to its own job folder: reads and writes outside it are denied, and the command line is a fixed list.
+
+You can also run it from a terminal: `claude -p "/edit-reel <video>"`. In Git Bash set `MSYS_NO_PATHCONV=1` first, otherwise `/edit-reel` is rewritten into a file path. Captions with word timing need `WHISPER_API_KEY`.
+
 ## Privacy
 
 - Videos are stored in `public/uploads/` on your machine and swept after 24 hours.
@@ -129,7 +146,7 @@ The **My Instagram** panel and the calibration engine read a local snapshot at `
 
 - Agent providers: let a local coding agent, through its CLI, write the report against the same contract.
 - Reel cards and a playbook that learn from your history, kept only when they pass a replay test.
-- An **Edit** tab that turns the report into an edit plan (silence cuts, re-hook, loudness, captions), renders it with ffmpeg, then re-analyses to show measured before/after differences.
+- Instagram import and a profile refresh, so you can plug in your own account.
 - A Windows installer.
 
 ## Contributing

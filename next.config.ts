@@ -12,6 +12,9 @@ const nextConfig: NextConfig = {
   // re-fetches sources without credentials, so the APP_PASSWORD gate 401s it
   // (icons broke on Render) — and it burns CPU the free instance doesn't have.
   images: { unoptimized: true },
+  // Since Next 16.4, `next dev` appends a managed block to AGENTS.md whenever it
+  // detects an AI coding agent. AGENTS.md is hand-written here, so keep it that way.
+  agentRules: false,
 };
 
 export default nextConfig;

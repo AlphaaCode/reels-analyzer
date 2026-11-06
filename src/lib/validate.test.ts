@@ -171,7 +171,7 @@ test('every report field is described in prompts/system.md with its counts and l
 const isMetrics = (key: string) => key === 'metrics';
 
 test('a broken answer is repaired with the previous answer and the errors, merging only the broken keys', async () => {
-    const broken = { ...validReport(), recommendations: lines(5) };
+    const broken: Record<string, unknown> = { ...validReport(), recommendations: lines(5) };
     const requests: RepairRequest[] = [];
     const outcome = await validateWithRepair({
         ask: async () => JSON.stringify(broken),
