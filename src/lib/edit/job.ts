@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { runClaude } from '@/lib/agent/claude';
 import { AnalysisError, findVideo } from '@/lib/analyzeJob';
 import { getCalibration } from '@/lib/calibrationStore';
+import { dataRoot } from '@/lib/paths';
 import type { Validation } from '@/lib/validate';
 import type { EditPlan } from './plan';
 import { prepareEditJob, type ForecastFile } from './prepare';
@@ -19,8 +20,8 @@ export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0
 const MAX_LINES = 80;
 const JOB_TTL_MS = 60 * 60 * 1000;
 
-export const editJobsDir = (): string => path.join(process.cwd(), 'data', 'edit-jobs');
-export const exportsDir = (): string => path.join(process.cwd(), 'exports');
+export const editJobsDir = (): string => path.join(dataRoot(), 'data', 'edit-jobs');
+export const exportsDir = (): string => path.join(dataRoot(), 'exports');
 
 export interface EditJob {
     id: string;
@@ -28,8 +29,8 @@ export interface EditJob {
     status: 'preparing' | 'planning' | 'planned' | 'rendering' | 'done' | 'error';
     lines: string[];
     sourceUrl: string;
-    /** What the user can type into Claude Code in this repo to do the same by hand. */
-    command: string;
+    /** What the user can type into Claude Code in this repo to do the same by hand; unset without a checkout. */
+    command?: string;
     forecast?: ForecastFile;
     plan?: EditPlan;
     validation?: Validation;
@@ -61,9 +62,15 @@ export function getEditJob(id: string): EditJob | undefined {
     return UUID_PATTERN.test(id) ? jobs.get(id)?.job : undefined;
 }
 
-/** What to type into Claude Code in this repo to make the same edit by hand. */
-export const editReelCommand = (videoPath: string): string =>
-    `/edit-reel ${path.relative(process.cwd(), videoPath).split(path.sep).join('/')}`;
+/**
+ * What to type into Claude Code in this repo to make the same edit by hand.
+ * Undefined where the server runs without a checkout (the desktop app, the
+ * container): the command lives in the repo's .claude/commands.
+ */
+export const editReelCommand = (videoPath: string): string | undefined =>
+    existsSync(path.join(process.cwd(), '.claude', 'commands', 'edit-reel.md'))
+        ? `/edit-reel ${path.relative(process.cwd(), videoPath).split(path.sep).join('/')}`
+        : undefined;
 
 /** The prompt passes the state and the numbers behind it; the reel-edit skill holds the rules. */
 function planningPrompt(sha256: string, forecast: ForecastFile): string {

@@ -4,8 +4,9 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { UPLOAD_MAX_AGE_HOURS, UPLOAD_KEEP_RECENT, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_LABEL } from '@/lib/constants';
+import { uploadsDir } from '@/lib/paths';
 
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
+const UPLOAD_DIR = uploadsDir();
 const ACCEPTED_TYPES = ['video/mp4', 'video/quicktime', 'video/webm'];
 
 // Uploads are a local cache — drop old files, but never the newest few
@@ -78,7 +79,8 @@ export async function POST(request: NextRequest) {
         const fileId = uuidv4();
         const extension = file.name.split('.').pop()?.toLowerCase() || 'mp4';
         const filename = `${fileId}.${extension}`;
-        const filePath = path.join(UPLOAD_DIR, filename);
+        // Runtime data, not code: nothing here for the build to trace
+        const filePath = path.join(/*turbopackIgnore: true*/ UPLOAD_DIR, filename);
 
         // Write file to disk
         const bytes = await file.arrayBuffer();
@@ -94,7 +96,7 @@ export async function POST(request: NextRequest) {
                 storedFilename: filename,
                 size: file.size,
                 format: extension,
-                path: `/uploads/${filename}`
+                path: `/api/media/uploads/${filename}`
             }
         });
     } catch (error) {

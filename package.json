@@ -1,6 +1,6 @@
 {
   "name": "reels-analyzer",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Local-first virality check for short-form video: ffmpeg signals, bring-your-own AI model, calibrated against your real reach.",
   "license": "MIT",
   "author": "Yazid Bensefia",

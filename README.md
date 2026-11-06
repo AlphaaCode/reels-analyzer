@@ -19,6 +19,21 @@ Measured signals from ffmpeg, a report from the AI model *you* choose, and a cal
 
 ---
 
+## Download for Windows
+
+1. Download `ReelsAnalyzer-Setup-<version>.exe` from the [latest release](https://github.com/AlphaaCode/reels-analyzer/releases/latest).
+2. Run it. Windows may warn you because the app is not code-signed: click **More info**, then **Run anyway**.
+3. Click through Setup. It installs for your Windows user only, without admin rights, and adds **Reels Analyzer** to the desktop and the Start menu.
+
+The app includes its own server and ffmpeg, so there is nothing else to install. To check the download, compare its hash with the `.sha256` file on the same release page: in PowerShell, run `Get-FileHash .\ReelsAnalyzer-Setup-<version>.exe`.
+
+- **Your data** (history, uploads, exports, settings) is kept in `%APPDATA%\Reels Analyzer`. **File → Open data folder** opens it.
+- **API keys:** **File → Open settings file** opens the app's settings in Notepad. The keys are the ones in [Choosing a model](#choosing-a-model). Without a key the app runs in signals-only mode.
+- **Updates:** at startup the app checks for a new release. It asks before downloading and again before installing.
+- **Uninstall** from Windows Settings → Apps. Your data is kept unless you tick **Also remove my data**.
+
+To run it from source instead, see [Quick start](#quick-start).
+
 ## Why this exists
 
 Most "will it go viral?" tools give you a confident number and no way to check it. Reels Analyzer does three things differently:
@@ -132,6 +147,8 @@ The plan depends on the forecast for that reel. A reel in the strongest band get
 
 The agent runs confined to its own job folder: reads and writes outside it are denied, and the command line is a fixed list.
 
+The planner checks its own plan with `node tools/check-edit.mjs`, which needs Node.js 22.18 or newer on your PATH, in the Windows app too.
+
 You can also run it from a terminal: `claude -p "/edit-reel <video>"`. In Git Bash set `MSYS_NO_PATHCONV=1` first, otherwise `/edit-reel` is rewritten into a file path. Captions with word timing need `WHISPER_API_KEY`.
 
 ## Privacy
@@ -140,6 +157,7 @@ You can also run it from a terminal: `claude -p "/edit-reel <video>"`. In Git Ba
 - Nothing is sent anywhere in signals-only mode or with a local Ollama model.
 - With a cloud provider, the frames, transcript or video go to that provider under their terms.
 - Analysis history, transcripts and calibration live in `data/` and are never committed.
+- The Windows app keeps all of this in `%APPDATA%\Reels Analyzer` instead. Its server listens only on this computer and answers only the app's own window.
 - Exposing the app beyond `localhost`? Set `APP_PASSWORD` to turn on the built-in password gate.
 
 ## Roadmap
@@ -147,7 +165,6 @@ You can also run it from a terminal: `claude -p "/edit-reel <video>"`. In Git Ba
 - Agent providers: let a local coding agent, through its CLI, write the report against the same contract.
 - Reel cards and a playbook that learn from your history, kept only when they pass a replay test.
 - Instagram import and a profile refresh, so you can plug in your own account.
-- A Windows installer.
 
 ## Contributing
 

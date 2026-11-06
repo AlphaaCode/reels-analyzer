@@ -43,6 +43,12 @@ yarn-error.log*
 # rendered video edits
 /exports/
 
+# desktop app build (electron/): its packages, downloaded ffmpeg, staged server, installer
+/electron/node_modules/
+/electron/.cache/
+/electron/stage/
+/electron/dist/
+
 # vercel
 .vercel
 

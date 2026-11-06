@@ -11,6 +11,7 @@ import {
     OPTIMAL_MIN_DURATION,
     OPTIMAL_MAX_DURATION
 } from '../constants';
+import { dataRoot } from '../paths';
 import { renderRepairPrompt, renderReportPrompt, renderScorePrompt } from '../prompt';
 import {
     formatIssues,
@@ -112,7 +113,7 @@ export function buildPrompt(
 
 // The last full report as a model wrote it (after any repairs), so
 // `node tools/check.mjs data/last-report.json` runs on a real answer
-const LAST_REPORT_FILE = path.join(process.cwd(), 'data', 'last-report.json');
+const LAST_REPORT_FILE = path.join(dataRoot(), 'data', 'last-report.json');
 
 function saveLastReport(report: Record<string, unknown>): void {
     try {

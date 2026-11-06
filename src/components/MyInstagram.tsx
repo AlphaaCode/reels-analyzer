@@ -1,8 +1,8 @@
 'use client';
 
 // "My Instagram" section — renders the locally cached profile snapshot
-// (public/ig-cache/profile.json) with real per-reel stats and an Analyze
-// button that feeds each cached video into the normal analysis pipeline.
+// (ig-cache/profile.json in the data folder) with real per-reel stats and an
+// Analyze button that feeds each cached video into the normal analysis pipeline.
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
@@ -45,13 +45,16 @@ interface MyInstagramProps {
     onAnalyzeReel: (fileId: string, label: string, actual: ActualPerformance) => void;
 }
 
+// The cache's files are served from the data folder by /api/media (src/lib/media.ts)
+const media = (url: string): string => (url.startsWith('/ig-cache/') ? `/api/media${url}` : url);
+
 export default function MyInstagram({ onAnalyzeReel }: MyInstagramProps) {
     const { t } = useLang();
     const [profile, setProfile] = useState<IgProfile | null>(null);
 
     useEffect(() => {
         let cancelled = false;
-        fetch('/ig-cache/profile.json')
+        fetch('/api/media/ig-cache/profile.json')
             .then(res => (res.ok ? res.json() : null))
             .then(data => {
                 if (!cancelled && data?.reels?.length) setProfile(data);
@@ -72,7 +75,7 @@ export default function MyInstagram({ onAnalyzeReel }: MyInstagramProps) {
             <div className="flex items-center gap-4 mb-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                    src={profile.avatar}
+                    src={media(profile.avatar)}
                     alt={profile.username}
                     className="w-14 h-14 rounded-full border border-gray-700 object-cover"
                 />
@@ -104,7 +107,7 @@ export default function MyInstagram({ onAnalyzeReel }: MyInstagramProps) {
                     >
                         <a href={reel.permalink} target="_blank" rel="noreferrer" className="relative block aspect-[9/16] bg-black">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={reel.thumb} alt="" className="w-full h-full object-cover" loading="lazy" />
+                            <img src={media(reel.thumb)} alt="" className="w-full h-full object-cover" loading="lazy" />
                             <span className="absolute bottom-1.5 left-1.5 right-1.5 text-[11px] font-semibold text-white bg-black/60 rounded-md px-1.5 py-0.5 text-center">
                                 {reel.stats.views.toLocaleString()} {t('igViews')}
                             </span>

@@ -14,6 +14,7 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { dataRoot } from '../paths.ts';
 import { extractSignals, FFMPEG, type VideoProbe } from '../signals.ts';
 import { formatIssues } from '../validate.ts';
 import type { Word } from '../whisper.ts';
@@ -32,6 +33,35 @@ const ARABIC_FONT = 'Noto Sans Arabic';
 // measure an LRA of 0); anything else gets loudnorm's dynamic mode, which can
 // land short of the target. The diff shows what it reached.
 const LOUDNORM_LIMITS = 'TP=-1:LRA=11';
+
+// H.264 encoders, best first. LGPL builds of ffmpeg (the desktop app ships one)
+// have no x264; Windows' own Media Foundation encoder at quality 80 matched x264
+// at CRF 18 on the demo reel and on grainy footage. OpenH264 is the last resort:
+// it shows blocks on flat gradients.
+const H264_ENCODERS = [
+    ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18'],
+    ['-c:v', 'h264_mf', '-rate_control', 'quality', '-quality', '80'],
+    ['-c:v', 'libopenh264', '-profile:v', 'high', '-coder', 'cabac', '-b:v', '12M', '-g', '15']
+];
+let h264: Promise<string[]> | undefined;
+
+/** The first encoder this ffmpeg can open, found once per process by a one-frame test encode. */
+export function h264Encoder(): Promise<string[]> {
+    h264 ??= (async () => {
+        for (const args of H264_ENCODERS) {
+            try {
+                // Windows editions without Media Foundation list h264_mf but can't open it
+                await execFileAsync(FFMPEG, ['-hide_banner', '-v', 'error', '-f', 'lavfi', '-i', 'color=size=64x64:duration=0.1',
+                    ...args, '-f', 'null', '-'], { windowsHide: true });
+                return args;
+            } catch {
+                // try the next one
+            }
+        }
+        return H264_ENCODERS[0];  // none opens: ffmpeg's own error says what is missing
+    })();
+    return h264;
+}
 
 /** What the diff compares: measured on both files, never predicted. */
 export type MeasuredSignals = Pick<TechnicalSignals,
@@ -58,7 +88,7 @@ export interface RenderOutput {
 export async function renderEdit(
     plan: EditPlan,
     context: EditContext,
-    { root = process.cwd(), outDir = path.join(root, 'exports') }: { root?: string; outDir?: string } = {}
+    { root = process.cwd(), outDir = path.join(dataRoot(root), 'exports') }: { root?: string; outDir?: string } = {}
 ): Promise<RenderOutput> {
     const { errors } = validateEditPlan(plan, context, root);
     if (errors.length) throw new Error(`The edit plan has errors:\n${formatIssues(errors)}`);
@@ -105,7 +135,7 @@ export async function renderEdit(
             '-filter_complex', graph,
             '-map', videoFilters.length ? '[vout]' : '[vc]',
             ...(probe.hasAudio ? ['-map', audioFilters.length ? '[aout]' : '[ac]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000'] : []),
-            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p',
+            ...await h264Encoder(), '-pix_fmt', 'yuv420p',
             '-movflags', '+faststart',
             video
         ], { maxBuffer: MAX_BUFFER, windowsHide: true });

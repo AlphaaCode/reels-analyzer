@@ -9,11 +9,13 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dataRoot } from '../src/lib/paths.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-// Settings come from .env.local like the app's; the shell's own variables win.
+// Settings come from .env.local like the app's (in the data folder); the shell's own variables win.
 // Before the imports below, because signals.ts reads FFMPEG_PATH as it loads.
-if (existsSync(path.join(root, '.env.local'))) process.loadEnvFile(path.join(root, '.env.local'));
+const envFile = path.join(dataRoot(root), '.env.local');
+if (existsSync(envFile)) process.loadEnvFile(envFile);
 const { formatValidation } = await import('../src/lib/validate.ts');
 const { loadEditContext, readForecastBeside, validateEditPlan } = await import('../src/lib/edit/validate.ts');
 const { renderEdit } = await import('../src/lib/edit/render.ts');

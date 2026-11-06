@@ -28,7 +28,9 @@ For changes to the analysis pipeline, also run a real analysis against the dev s
 
 Everything runs server-side in App Router routes:
 
-- `POST /api/upload` stores the video as `public/uploads/{uuid}.{ext}` and sweeps old uploads, always keeping the three newest.
+- **The data folder** (`src/lib/paths.ts`) holds everything the app writes: `data/`, `public/uploads/`, `public/ig-cache/`, `exports/` and `.env.local`. It is the checkout itself unless `APP_DATA_DIR` is set; the Windows app sets it to `%APPDATA%\Reels Analyzer`. Read-only files (prompts, schema, fonts, `tools/`, the planner's skill) always come from the server's own folder. Write new paths through `dataRoot()`, never `process.cwd()`.
+- `GET /api/media/{uploads|ig-cache}/...` serves uploads and the Instagram cache from the data folder (`src/lib/media.ts`), with Range support for video seeking. It accepts only safe file names of known media types inside those two folders.
+- `POST /api/upload` stores the video as `public/uploads/{uuid}.{ext}` in the data folder and sweeps old uploads, always keeping the three newest.
 - `POST /api/analyze/start` then `GET /api/analyze/status?job=` run an analysis as a job (`src/lib/analyzeJob.ts`). `POST /api/analyze` does the same in one call for scripts.
 - The pipeline:
   1. **Signals** (`src/lib/signals.ts`): ffprobe metadata, hard cuts and cuts per minute, EBU R128 loudness against −14 LUFS, silence spans, hook thumbnails. Reads are retried because fresh uploads can be briefly locked on Windows.
@@ -43,6 +45,26 @@ Everything runs server-side in App Router routes:
   - `render.ts` renders those pieces in one ffmpeg run (`node tools/render-edit.mjs <plan> <video>`). It writes `exports/{sha256}-{n}.mp4` beside the plan and a before/after diff measured with the same signals.
   - Word timestamps (`words.ts`) come from Whisper and are cached in `data/words/`.
   - Burned-in text uses the bundled Noto fonts in `assets/fonts/` (SIL OFL).
+
+## Windows app
+
+`electron/` wraps the production server in an app window and builds the installer. It has its own `package.json`, so the web app's `npm ci` never downloads Electron.
+
+```bash
+npm ci && npm run build          # the web app, at the root
+cd electron
+npm ci
+npm run ffmpeg                   # BtbN's LGPL ffmpeg build, pinned by SHA256, into stage/ffmpeg
+npm run stage                    # the server bundle into stage/server
+npm start                        # optional: run the app window from source
+npm run dist                     # dist/ReelsAnalyzer-Setup-<version>.exe
+```
+
+- `main.js` starts `server-host.js`, which runs the standalone server in Electron's own Node, on `127.0.0.1`. It uses port 3217, or any free port when 3217 is taken. The window loads the app once `/api/health` answers.
+- The server gets `APP_DATA_DIR`, the bundled `FFMPEG_PATH`/`FFPROBE_PATH`, and the values from the data folder's `.env.local`. It also gets a random `APP_PASSWORD` that only the window sends, so other programs and web pages can't use it.
+- `stage.mjs` copies an explicit list of files, never the whole standalone folder, which can trace `data/`, uploads and the Instagram cache in. It refuses to stage if a settings file, a user-data folder or a key-shaped string turns up.
+- The version comes from the root `package.json`. Pushing the matching tag `vX.Y.Z` runs `.github/workflows/release.yml`, which builds the installer and publishes it to that tag's GitHub Release, together with `latest.yml` (the update feed) and a `.sha256` file.
+- The LGPL ffmpeg has no x264. `render.ts` picks the first H.264 encoder that works: x264, then Windows Media Foundation, then OpenH264.
 
 ## Rules
 

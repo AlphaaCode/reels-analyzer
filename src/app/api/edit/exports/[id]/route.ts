@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
 import { deleteExport, exportPath } from '@/lib/edit/job';
+import { uploadsDir } from '@/lib/paths';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,7 @@ export async function POST(_request: NextRequest, { params }: Params) {
     const file = exportPath((await params).id, '.mp4');
     if (!file || !existsSync(file)) return NextResponse.json({ success: false, error: 'No such export' }, { status: 404 });
     const fileId = uuidv4();
-    const uploads = path.join(process.cwd(), 'public', 'uploads');
+    const uploads = uploadsDir();
     await mkdir(uploads, { recursive: true });
     await copyFile(file, path.join(uploads, `${fileId}.mp4`));
     return NextResponse.json({ success: true, fileId });

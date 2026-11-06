@@ -1,0 +1,23 @@
+{
+  "name": "reels-analyzer-desktop",
+  "productName": "Reels Analyzer",
+  "version": "0.0.0",
+  "description": "Reels Analyzer for Windows: the web app's server in its own window, with ffmpeg included.",
+  "author": "Yazid Bensefia",
+  "license": "MIT",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "ffmpeg": "node fetch-ffmpeg.mjs",
+    "stage": "node stage.mjs",
+    "start": "electron .",
+    "dist": "electron-builder --config electron-builder.config.js --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0"
+  }
+}

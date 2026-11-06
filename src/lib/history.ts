@@ -5,11 +5,12 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import { dataRoot, igCacheDir } from '@/lib/paths';
 import type { ActualPerformance, AnalysisMetrics, ProviderName, TechnicalSignals } from '@/types/analysis';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+const DATA_DIR = path.join(dataRoot(), 'data');
 const FILE = path.join(DATA_DIR, 'analyses.json');
-const IG_PROFILE = path.join(process.cwd(), 'public', 'ig-cache', 'profile.json');
+const IG_PROFILE = path.join(igCacheDir(), 'profile.json');
 
 // The measured signals worth keeping: deterministic, free, and plausible
 // predictors in their own right — the backtest tests them beside the AI's scores.

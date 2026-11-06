@@ -11,11 +11,13 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dataRoot } from '../src/lib/paths.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-// Settings come from .env.local like the app's; the shell's own variables win.
+const data = dataRoot(root);
+// Settings come from .env.local like the app's (in the data folder); the shell's own variables win.
 // Before the imports below, because signals.ts reads FFMPEG_PATH as it loads.
-if (existsSync(path.join(root, '.env.local'))) process.loadEnvFile(path.join(root, '.env.local'));
+if (existsSync(path.join(data, '.env.local'))) process.loadEnvFile(path.join(data, '.env.local'));
 const { prepareEditJob } = await import('../src/lib/edit/prepare.ts');
 const { sha256File } = await import('../src/lib/edit/words.ts');
 
@@ -46,10 +48,10 @@ async function main(target, jobArg) {
         return 0;
     }
 
-    const calibrationFile = path.join(root, 'data', 'calibration.json');
+    const calibrationFile = path.join(data, 'data', 'calibration.json');
     const calibration = existsSync(calibrationFile) ? JSON.parse(readFileSync(calibrationFile, 'utf8')) : undefined;
     const sha256 = await sha256File(target);
-    const jobDir = path.resolve(jobArg ?? path.join(root, 'data', 'edit-jobs', `${sha256.slice(0, 8)}-${Date.now()}`));
+    const jobDir = path.resolve(jobArg ?? path.join(data, 'data', 'edit-jobs', `${sha256.slice(0, 8)}-${Date.now()}`));
     await prepareEditJob(target, jobDir, { calibration, root });
     await describe(jobDir);
     return 0;

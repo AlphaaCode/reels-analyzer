@@ -19,10 +19,11 @@ import { getCalibration } from '@/lib/calibrationStore';
 import { buildLabelledReels } from '@/lib/calibration';
 import { readHistory } from '@/lib/history';
 import { saveReport } from '@/lib/edit/prepare';
+import { igCacheDir, uploadsDir } from '@/lib/paths';
 import type { ActualPerformance, AIInsights, AnalysisResult, AnalysisStage, ProviderName, TechnicalSignals } from '@/types/analysis';
 
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
-const IG_CACHE_DIR = path.join(process.cwd(), 'public', 'ig-cache');
+const UPLOAD_DIR = uploadsDir();
+const IG_CACHE_DIR = igCacheDir();
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MIME_BY_EXTENSION: Record<string, string> = {
     mp4: 'video/mp4',
@@ -66,7 +67,7 @@ export async function findVideo(fileId: unknown): Promise<{ path: string; public
     let videoFile = files.find(f => f.startsWith(`${fileId}.`));
     let fromIgCache = false;
     if (!videoFile) {
-        // fall back to the cached Instagram reels (public/ig-cache)
+        // fall back to the cached Instagram reels (ig-cache)
         const igFiles = existsSync(IG_CACHE_DIR) ? await readdir(IG_CACHE_DIR) : [];
         videoFile = igFiles.find(f => f.startsWith(`${fileId}.`) && f.endsWith('.mp4'));
         fromIgCache = videoFile !== undefined;
@@ -82,7 +83,7 @@ export async function findVideo(fileId: unknown): Promise<{ path: string; public
     }
     return {
         path: path.join(fromIgCache ? IG_CACHE_DIR : UPLOAD_DIR, videoFile),
-        publicUrl: `/${fromIgCache ? 'ig-cache' : 'uploads'}/${videoFile}`,
+        publicUrl: `/api/media/${fromIgCache ? 'ig-cache' : 'uploads'}/${videoFile}`,
         mimeType,
         fromIgCache
     };

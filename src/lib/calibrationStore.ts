@@ -8,8 +8,9 @@ import path from 'path';
 import { METRIC_WEIGHTS } from './constants';
 import { buildLabelledReels, calibrate, measureNoiseFloor, type Calibration } from './calibration';
 import { readHistory } from './history';
+import { dataRoot } from './paths';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+const DATA_DIR = path.join(dataRoot(), 'data');
 const FILE = path.join(DATA_DIR, 'calibration.json');
 
 interface CachedCalibration extends Calibration {

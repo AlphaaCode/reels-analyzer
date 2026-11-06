@@ -14,7 +14,7 @@ Instructions for coding agents working in this repository. Humans should read [C
 - No emojis in UI or model output.
 - The report format is defined by `schema/report.schema.json` and enforced by `src/lib/validate.ts`. Change both together, add a test, and keep `node tools/check.mjs` passing. The same goes for the edit plan: `schema/edit-plan.schema.json`, `src/lib/edit/validate.ts` and `node tools/check-edit.mjs`.
 - Do not move prompt text back into TypeScript; it lives in `prompts/`.
-- Never read, print or commit `.env.local`, `public/ig-cache/`, `public/uploads/` or `data/`.
+- Never read, print or commit `.env.local`, `public/ig-cache/`, `public/uploads/` or `data/`, in the checkout or in the Windows app's data folder (`%APPDATA%\Reels Analyzer`).
 - Keep the current visual design (dark gray surfaces, pink-to-orange gradient accents) unless the task says otherwise.
 
 ## Writing a report as an agent

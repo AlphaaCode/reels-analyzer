@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 
 import Header from '@/components/Header';
@@ -15,6 +15,15 @@ import { pickText, useLang } from '@/lib/i18n';
 import type { VideoMetadata, UploadResponse } from '@/types/video';
 import type { ActualPerformance, AnalysisResult, AnalysisStage, AnalyzeStartResponse, AnalyzeStatusResponse } from '@/types/analysis';
 
+// The result on screen, kept for this tab so a reload shows it again (and the Edit tab's job with it)
+const RESULT_KEY = 'shownResult';
+interface ShownResult {
+  result: AnalysisResult;
+  fileId: string | null;
+  metadata: VideoMetadata | null;
+  isEditEstimate: boolean;
+}
+
 export default function Home() {
   const { t, lang } = useLang();
   const [file, setFile] = useState<File | null>(null);
@@ -27,6 +36,30 @@ export default function Home() {
   const [startedAt, setStartedAt] = useState(0);
   const [analyzedFileId, setAnalyzedFileId] = useState<string | null>(null);
   const [isEditEstimate, setIsEditEstimate] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(RESULT_KEY) ?? 'null') as ShownResult | null;
+      if (!saved) return;
+      setAnalysisResult(saved.result);
+      setAnalyzedFileId(saved.fileId);
+      setMetadata(saved.metadata);
+      setIsEditEstimate(saved.isEditEstimate);
+      setAnalysisState('complete');
+    } catch {
+      sessionStorage.removeItem(RESULT_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (analysisState !== 'complete' || !analysisResult) return;
+    const shown: ShownResult = { result: analysisResult, fileId: analyzedFileId, metadata, isEditEstimate };
+    try {
+      sessionStorage.setItem(RESULT_KEY, JSON.stringify(shown));
+    } catch {
+      // storage full: a reload starts over, as before
+    }
+  }, [analysisState, analysisResult, analyzedFileId, metadata, isEditEstimate]);
 
   const handleFileSelect = async (selectedFile: File) => {
     setFile(selectedFile);
@@ -161,6 +194,7 @@ export default function Home() {
   };
 
   const handleReset = () => {
+    sessionStorage.removeItem(RESULT_KEY);
     setFile(null);
     setMetadata(null);
     setAnalysisState('idle');

@@ -1,0 +1,72 @@
+name: Release
+
+# Pushing a tag vX.Y.Z (the root package.json version) builds the Windows
+# installer and publishes it to that tag's GitHub Release, with the update
+# feed (latest.yml) and a SHA256 file. electron-builder creates the release if
+# it doesn't exist yet.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            electron/package-lock.json
+
+      - name: Tag matches package.json
+        shell: bash
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json ($version)"
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm ci
+        working-directory: electron
+      - run: node electron/fetch-ffmpeg.mjs
+
+      - name: Tests, on the ffmpeg the app ships
+        run: npm test
+        env:
+          FFMPEG_PATH: ${{ github.workspace }}\electron\stage\ffmpeg\ffmpeg.exe
+          FFPROBE_PATH: ${{ github.workspace }}\electron\stage\ffmpeg\ffprobe.exe
+
+      - run: npm run build
+      - run: node electron/stage.mjs
+
+      - name: Build the installer and publish it
+        run: npx electron-builder --config electron-builder.config.js --publish always
+        working-directory: electron
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Upload even when the release was published over two hours ago (a re-run)
+          EP_GH_IGNORE_TIME: 'true'
+
+      - name: Publish the SHA256 file and check the release
+        shell: pwsh
+        working-directory: electron/dist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $exe = Get-Item "ReelsAnalyzer-Setup-*.exe"
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          [IO.File]::WriteAllText("$($exe.FullName).sha256", "$hash  $($exe.Name)`n")
+          gh release upload $env:GITHUB_REF_NAME "$($exe.Name).sha256" --clobber --repo $env:GITHUB_REPOSITORY
+          $assets = (gh release view $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --json assets | ConvertFrom-Json).assets.name
+          foreach ($name in $exe.Name, "$($exe.Name).sha256", 'latest.yml') {
+            if ($assets -notcontains $name) { throw "$name is missing from release $env:GITHUB_REF_NAME" }
+          }
+          "$hash  $($exe.Name)"

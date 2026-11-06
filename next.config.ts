@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
+import { MAX_VIDEO_SIZE_BYTES } from "./src/lib/constants";
 
 const nextConfig: NextConfig = {
+  // The password gate (src/proxy.ts) runs on every request, so Next buffers
+  // request bodies for it and cuts them at 10 MB by default, which broke every
+  // larger upload. Allow up to the upload route's own limit.
+  experimental: { proxyClientMaxBodySize: MAX_VIDEO_SIZE_BYTES },
   // Self-contained server bundle for container deploys (Hugging Face Spaces, Render, any VPS)
   output: 'standalone',
   // The report contract is read from disk at runtime (src/lib/prompt.ts,

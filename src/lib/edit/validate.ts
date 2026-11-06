@@ -6,6 +6,7 @@
 import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import type { ForecastState } from '../calibration.ts';
+import { dataRoot } from '../paths.ts';
 import { probeVideo, type VideoProbe } from '../signals.ts';
 import { loadReportSchema, loadSchema, validateValue, type JsonSchema, type Validation } from '../validate.ts';
 import { planTimeline, silenceRemovals, type EditOp, type EditPlan, type Span } from './plan.ts';
@@ -37,7 +38,7 @@ export async function loadEditContext(
         videoPath,
         sha256,
         probe,
-        track: track ?? await getWords(videoPath, { sha256, hasAudio: probe.hasAudio, cacheDir: path.join(root, 'data', 'words') })
+        track: track ?? await getWords(videoPath, { sha256, hasAudio: probe.hasAudio, cacheDir: path.join(dataRoot(root), 'data', 'words') })
     };
 }
 

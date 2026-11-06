@@ -51,13 +51,22 @@ const DIFF_ROWS: [StringKey, (s: MeasuredSignals) => number | null][] = [
 ];
 const BUSY: EditJob['status'][] = ['preparing', 'planning', 'rendering'];
 
+// The tab's job id, so a tab switch or a reload finds the job again
+const jobKey = (fileId: string) => `editJob:${fileId}`;
+
+// Ops the checker refused start unticked
+function opsToKeep(job: EditJob): boolean[] {
+    const broken = new Set((job.validation?.errors ?? []).map(e => /^\/ops\/(\d+)/.exec(e.path)?.[1]).filter(Boolean).map(Number));
+    return (job.plan?.ops ?? []).map((_, i) => !broken.has(i));
+}
+
 const sec = (t: number) => `${Math.round(t * 100) / 100} s`;
 const round = (n: number | null) => (n === null ? '-' : String(Math.round(n * 10) / 10));
 
 export default function EditPanel({ fileId, calibration, technical, onReanalyze }: EditPanelProps) {
     const { t, lang } = useLang();
     const [gate, setGate] = useState<Gate | null>(null);
-    const [preview, setPreview] = useState<{ sourceUrl: string; command: string } | null>(null);
+    const [preview, setPreview] = useState<{ sourceUrl: string; command?: string } | null>(null);
     const [job, setJob] = useState<EditJob | null>(null);
     const [enabled, setEnabled] = useState<boolean[]>([]);
     const [exports, setExports] = useState<ExportEntry[]>([]);
@@ -84,6 +93,21 @@ export default function EditPanel({ fileId, calibration, technical, onReanalyze 
         axios.get('/api/edit/start', { params: { fileId } }).then(response => setPreview(response.data)).catch(() => {});
     }, [fileId, loadGate, loadExports]);
 
+    // Re-attach to this reel's job; the server forgets jobs on restart and after an hour
+    useEffect(() => {
+        const id = sessionStorage.getItem(jobKey(fileId));
+        if (!id) return;
+        let live = true;
+        axios.get<{ job: EditJob }>('/api/edit/status', { params: { job: id } })
+            .then(response => {
+                if (!live) return;
+                setEnabled(opsToKeep(response.data.job));
+                setJob(current => current ?? response.data.job);
+            })
+            .catch(() => sessionStorage.removeItem(jobKey(fileId)));
+        return () => { live = false; };
+    }, [fileId]);
+
     // Poll while the job is busy
     useEffect(() => {
         if (!job || !BUSY.includes(job.status)) return;
@@ -91,14 +115,11 @@ export default function EditPanel({ fileId, calibration, technical, onReanalyze 
             try {
                 const response = await axios.get<{ job: EditJob }>('/api/edit/status', { params: { job: job.id } });
                 const next = response.data.job;
-                if (job.status === 'planning' && next.status === 'planned' && next.plan) {
-                    // Ops the checker refused start unticked
-                    const broken = new Set((next.validation?.errors ?? []).map(e => /^\/ops\/(\d+)/.exec(e.path)?.[1]).filter(Boolean).map(Number));
-                    setEnabled(next.plan.ops.map((_, i) => !broken.has(i)));
-                }
+                if (job.status === 'planning' && next.status === 'planned' && next.plan) setEnabled(opsToKeep(next));
                 if (job.status === 'rendering' && next.status === 'done') loadExports();
                 setJob(next);
             } catch {
+                sessionStorage.removeItem(jobKey(job.fileId));
                 setError('Lost the edit job. Start again.');
                 setJob(null);
             }
@@ -110,6 +131,7 @@ export default function EditPanel({ fileId, calibration, technical, onReanalyze 
         setError(null);
         try {
             const response = await axios.post<{ jobId: string }>('/api/edit/start', { fileId });
+            sessionStorage.setItem(jobKey(fileId), response.data.jobId);
             setJob({ id: response.data.jobId, fileId, status: 'preparing', lines: [], sourceUrl: preview?.sourceUrl ?? '', command: preview?.command ?? '', createdAt: Date.now() });
         } catch (err) {
             setError(axios.isAxiosError(err) ? String(err.response?.data?.error ?? err.message) : 'Failed to start');
@@ -139,7 +161,7 @@ export default function EditPanel({ fileId, calibration, technical, onReanalyze 
     };
 
     const copy = async () => {
-        if (!preview) return;
+        if (!preview?.command) return;
         await navigator.clipboard.writeText(preview.command);
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
@@ -216,7 +238,7 @@ export default function EditPanel({ fileId, calibration, technical, onReanalyze 
                         {t(job ? 'editRunAgain' : 'editRun')}
                     </button>
                 </div>
-                {preview && (
+                {preview?.command && (
                     <div className="mt-4">
                         <p className="text-xs text-gray-500 mb-1">{t('editCommandLabel')}</p>
                         <div className="flex items-center gap-2">
