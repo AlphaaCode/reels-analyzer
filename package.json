@@ -14,7 +14,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test src/lib/*.test.ts"
+    "test": "node --test src/lib/*.test.ts src/lib/edit/*.test.ts src/lib/agent/*.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.10.0",

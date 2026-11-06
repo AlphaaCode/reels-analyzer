@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edit-plan.schema.json",
+  "title": "Reels Analyzer edit plan",
+  "description": "The one JSON object a model or agent writes to edit a reel; it never touches the video itself. node tools/check-edit.mjs <plan> <video> checks it against the video and node tools/render-edit.mjs <plan> <video> renders it with ffmpeg and measures the result (src/lib/edit/). Times are seconds in the source video, except hookText, which is timed on the edited output. Op order does not matter: cuts and trimmed silence are removed, a rehook puts its line first, then punch-ins, text, captions and loudness apply to what is left.",
+  "type": "object",
+  "required": ["sourceSha256", "reportRef", "forecastState", "language", "ops"],
+  "properties": {
+    "sourceSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the source video file, lowercase hex. A plan applies to that exact file only."
+    },
+    "reportRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "description": "The report.json the plan answers: its path or the analysis id."
+    },
+    "forecastState": {
+      "type": "string",
+      "enum": ["locked", "low", "mid", "high"],
+      "description": "Where the source reel sat on the account's validated signal when the plan was written (forecastFor in src/lib/calibration.ts, the same call as the prediction card): locked when no signal has survived calibration or the reel has no value for it, else low (first band), mid (a band between) or high (last band). It sets how bold the edit may be; only low allows a rehook."
+    },
+    "language": {
+      "type": "string",
+      "enum": ["en", "ar"],
+      "description": "The reel's language: which half of hookText is burned in."
+    },
+    "ops": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/op" }
+    }
+  },
+  "$defs": {
+    "op": {
+      "type": "object",
+      "oneOf": [
+        { "$ref": "#/$defs/cut" },
+        { "$ref": "#/$defs/trimSilence" },
+        { "$ref": "#/$defs/rehook" },
+        { "$ref": "#/$defs/hookText" },
+        { "$ref": "#/$defs/loudnorm" },
+        { "$ref": "#/$defs/captions" },
+        { "$ref": "#/$defs/punchIn" }
+      ]
+    },
+    "cut": {
+      "type": "object",
+      "description": "Remove start..end. Both edges sit between words when word timestamps exist.",
+      "required": ["kind", "start", "end", "reason", "finding"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["cut"] },
+        "start": { "$ref": "#/$defs/seconds" },
+        "end": { "$ref": "#/$defs/seconds" },
+        "reason": { "$ref": "#/$defs/reason" },
+        "finding": { "$ref": "#/$defs/finding" }
+      }
+    },
+    "trimSilence": {
+      "type": "object",
+      "description": "Shorten every silence at least minGapSec long to keepSec, kept half on each side. Silence is the time between words, or detected silence when there are no word timestamps. At most one.",
+      "required": ["kind", "minGapSec", "keepSec", "reason", "finding"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["trimSilence"] },
+        "minGapSec": { "type": "number", "minimum": 0.2, "maximum": 5 },
+        "keepSec": { "type": "number", "minimum": 0, "maximum": 2, "description": "Shorter than minGapSec." },
+        "reason": { "$ref": "#/$defs/reason" },
+        "finding": { "$ref": "#/$defs/finding" }
+      }
+    },
+    "rehook": {
+      "type": "object",
+      "description": "Open on the line fromSec..toSec. tease copies it to the opening and keeps it in place; move takes it out of its place. Both edges sit between words; needs word timestamps. At most one.",
+      "required": ["kind", "fromSec", "toSec", "mode", "reason", "finding"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["rehook"] },
+        "fromSec": { "$ref": "#/$defs/seconds" },
+        "toSec": { "$ref": "#/$defs/seconds" },
+        "mode": { "type": "string", "enum": ["tease", "move"] },
+        "reason": { "$ref": "#/$defs/reason" },
+        "finding": { "$ref": "#/$defs/finding" }
+      }
+    },
+    "hookText": {
+      "type": "object",
+      "description": "On-screen text from start to end, timed on the edited output (0 is its first frame). The half named by language is burned in. At most one.",
+      "required": ["kind", "text", "start", "end", "position", "reason", "finding"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["hookText"] },
+        "text": { "$ref": "#/$defs/hookLine" },
+        "start": { "$ref": "#/$defs/seconds" },
+        "end": { "$ref": "#/$defs/seconds" },
+        "position": { "type": "string", "enum": ["top", "center", "bottom"] },
+        "reason": { "$ref": "#/$defs/reason" },
+        "finding": { "$ref": "#/$defs/finding" }
+      }
+    },
+    "loudnorm": {
+      "type": "object",
+      "description": "Normalise loudness with two-pass EBU R128 loudnorm. Needs an audio track. At most one.",
+      "required": ["kind", "targetLufs", "reason", "finding"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["loudnorm"] },
+        "targetLufs": { "type": "number", "minimum": -14, "maximum": -14, "description": "Always -14, the platform target." },
+        "reason": { "$ref": "#/$defs/reason" },
+        "finding": { "$ref": "#/$defs/finding" }
+      }
+    },
+    "captions": {
+      "type": "object",
+      "description": "Burn in captions timed to the spoken words, verbatim in the spoken language. Needs word timestamps. At most one.",
+      "required": ["kind", "style", "reason", "finding"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["captions"] },
+        "style": { "type": "string", "enum": ["bold", "clean"], "description": "bold: a few large words at a time with an outline; clean: a short line on a dark box." },
+        "reason": { "$ref": "#/$defs/reason" },
+        "finding": { "$ref": "#/$defs/finding" }
+      }
+    },
+    "punchIn": {
+      "type": "object",
+      "description": "Zoom in by scale, centred, from at for durationSec. Punch-ins don't overlap each other.",
+      "required": ["kind", "at", "durationSec", "scale", "reason", "finding"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["punchIn"] },
+        "at": { "$ref": "#/$defs/seconds" },
+        "durationSec": { "type": "number", "minimum": 0.2, "maximum": 10 },
+        "scale": { "type": "number", "minimum": 1.05, "maximum": 1.3 },
+        "reason": { "$ref": "#/$defs/reason" },
+        "finding": { "$ref": "#/$defs/finding" }
+      }
+    },
+    "seconds": { "type": "number", "minimum": 0 },
+    "reason": {
+      "type": "object",
+      "description": "Why this op, in English (en) and Modern Standard Arabic (ar), at most 250 characters each.",
+      "required": ["en", "ar"],
+      "properties": {
+        "en": { "type": "string", "minLength": 1, "maxLength": 250 },
+        "ar": { "type": "string", "minLength": 1, "maxLength": 250 }
+      }
+    },
+    "hookLine": {
+      "type": "object",
+      "description": "The on-screen text in English (en) and Modern Standard Arabic (ar), at most 60 characters each.",
+      "required": ["en", "ar"],
+      "properties": {
+        "en": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "ar": { "type": "string", "minLength": 1, "maxLength": 60 }
+      }
+    },
+    "finding": {
+      "type": "string",
+      "pattern": "^(/[^/]+)+$",
+      "description": "JSON pointer to the report.json field this op answers (schema/report.schema.json), e.g. /hookVerdict or /improvements/0."
+    }
+  }
+}

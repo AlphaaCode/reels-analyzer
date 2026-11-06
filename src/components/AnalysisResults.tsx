@@ -16,22 +16,59 @@ import ViralityMeter from './ViralityMeter';
 import MetricsGrid from './MetricsGrid';
 import RecommendationsPanel from './RecommendationsPanel';
 import PredictionCard from './PredictionCard';
+import EditPanel from './EditPanel';
 
 interface AnalysisResultsProps {
     result: AnalysisResult;
     onAnalyzeAnother: () => void;
     onDownloadReport: () => void;
+    /** The analysed video; enables the Edit tab. */
+    fileId?: string;
+    /** Analyse an edited export as a new upload. */
+    onReanalyze?: (fileId: string) => void;
+    /** This result is a re-analysis of an edited export. */
+    isEditEstimate?: boolean;
 }
 
 export default function AnalysisResults({
     result,
     onAnalyzeAnother,
-    onDownloadReport
+    onDownloadReport,
+    fileId,
+    onReanalyze,
+    isEditEstimate
 }: AnalysisResultsProps) {
     const { t, lang } = useLang();
+    const [tab, setTab] = useState<'report' | 'edit'>('report');
+    const tabClass = (active: boolean) =>
+        `py-2 px-5 rounded-xl text-sm font-semibold transition-colors ${active
+            ? 'bg-gradient-to-r from-pink-500 to-orange-500 text-white'
+            : 'text-gray-400 hover:text-white hover:bg-gray-800'}`;
     return (
         <div className="max-w-6xl mx-auto space-y-8 animate-fade-in pb-12">
             <ProviderBadge provider={result.provider} note={result.providerNote} />
+
+            {isEditEstimate && (
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-200">
+                    {t('editEstimateBanner')}
+                </div>
+            )}
+
+            {fileId && onReanalyze && (
+                <div role="tablist" className="inline-flex gap-1 p-1 rounded-2xl bg-gray-800/50 border border-gray-700/50">
+                    <button role="tab" aria-selected={tab === 'report'} onClick={() => setTab('report')} className={tabClass(tab === 'report')}>
+                        {t('tabReport')}
+                    </button>
+                    <button role="tab" aria-selected={tab === 'edit'} onClick={() => setTab('edit')} className={tabClass(tab === 'edit')}>
+                        {t('tabEdit')}
+                    </button>
+                </div>
+            )}
+
+            {tab === 'edit' && fileId && onReanalyze ? (
+                <EditPanel fileId={fileId} calibration={result.calibration} technical={result.technical} onReanalyze={onReanalyze} />
+            ) : (
+            <div className="space-y-8">
 
             {/* Reality Check: prediction vs the reel's real performance */}
             {result.performanceReview && result.actual && (
@@ -133,6 +170,8 @@ export default function AnalysisResults({
 
             {/* Full Transcript */}
             {result.transcript && <TranscriptPanel transcript={result.transcript} />}
+            </div>
+            )}
         </div>
     );
 }

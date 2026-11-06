@@ -18,6 +18,7 @@ import { recordAnalysis } from '@/lib/history';
 import { getCalibration } from '@/lib/calibrationStore';
 import { buildLabelledReels } from '@/lib/calibration';
 import { readHistory } from '@/lib/history';
+import { saveReport } from '@/lib/edit/prepare';
 import type { ActualPerformance, AIInsights, AnalysisResult, AnalysisStage, ProviderName, TechnicalSignals } from '@/types/analysis';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
@@ -56,6 +57,37 @@ export function parseActual(value: unknown): ActualPerformance | undefined {
     return parsed;
 }
 
+/** An uploaded or cached reel by its fileId: where it is on disk and where the browser can play it. */
+export async function findVideo(fileId: unknown): Promise<{ path: string; publicUrl: string; mimeType: string; fromIgCache: boolean }> {
+    if (typeof fileId !== 'string' || !UUID_PATTERN.test(fileId)) {
+        throw new AnalysisError('Invalid fileId', 400);
+    }
+    const files = existsSync(UPLOAD_DIR) ? await readdir(UPLOAD_DIR) : [];
+    let videoFile = files.find(f => f.startsWith(`${fileId}.`));
+    let fromIgCache = false;
+    if (!videoFile) {
+        // fall back to the cached Instagram reels (public/ig-cache)
+        const igFiles = existsSync(IG_CACHE_DIR) ? await readdir(IG_CACHE_DIR) : [];
+        videoFile = igFiles.find(f => f.startsWith(`${fileId}.`) && f.endsWith('.mp4'));
+        fromIgCache = videoFile !== undefined;
+    }
+    if (!videoFile) {
+        throw new AnalysisError('Video file not found — please upload it again', 404);
+    }
+
+    const extension = videoFile.split('.').pop()?.toLowerCase() ?? '';
+    const mimeType = MIME_BY_EXTENSION[extension];
+    if (!mimeType) {
+        throw new AnalysisError(`Unsupported video format: .${extension}`, 400);
+    }
+    return {
+        path: path.join(fromIgCache ? IG_CACHE_DIR : UPLOAD_DIR, videoFile),
+        publicUrl: `/${fromIgCache ? 'ig-cache' : 'uploads'}/${videoFile}`,
+        mimeType,
+        fromIgCache
+    };
+}
+
 export interface PipelineOptions {
     onStage?: (stage: AnalysisStage) => void;
     /** Ask providers for the six scores only — used by calibration labelling. */
@@ -74,26 +106,7 @@ export async function runAnalysisPipeline(
         throw new AnalysisError('Invalid fileId', 400);
     }
 
-    const files = existsSync(UPLOAD_DIR) ? await readdir(UPLOAD_DIR) : [];
-    let videoFile = files.find(f => f.startsWith(`${fileId}.`));
-    let videoDir = UPLOAD_DIR;
-    if (!videoFile) {
-        // fall back to the cached Instagram reels (public/ig-cache)
-        const igFiles = existsSync(IG_CACHE_DIR) ? await readdir(IG_CACHE_DIR) : [];
-        videoFile = igFiles.find(f => f.startsWith(`${fileId}.`) && f.endsWith('.mp4'));
-        if (videoFile) videoDir = IG_CACHE_DIR;
-    }
-    if (!videoFile) {
-        throw new AnalysisError('Video file not found — please upload it again', 404);
-    }
-
-    const extension = videoFile.split('.').pop()?.toLowerCase() ?? '';
-    const mimeType = MIME_BY_EXTENSION[extension];
-    if (!mimeType) {
-        throw new AnalysisError(`Unsupported video format: .${extension}`, 400);
-    }
-
-    const videoPath = path.join(videoDir, videoFile);
+    const { path: videoPath, mimeType, fromIgCache } = await findVideo(fileId);
     let signals: TechnicalSignals;
     let thumbnails: string[];
     try {
@@ -164,7 +177,7 @@ export async function runAnalysisPipeline(
     try {
         recordAnalysis({
             fileId,
-            source: videoDir === IG_CACHE_DIR ? 'ig-cache' : 'upload',
+            source: fromIgCache ? 'ig-cache' : 'upload',
             provider: providerName,
             mode,
             providerModel: providerName === 'open'
@@ -180,14 +193,22 @@ export async function runAnalysisPipeline(
         console.error('Could not record analysis history:', error);
     }
 
+    // The edit tab plans from this report: keep it per video (data/reports/{sha256}.json)
+    if (mode === 'full') {
+        try {
+            await saveReport(videoPath, insights);
+        } catch (error) {
+            console.error('Could not save the report for editing:', error);
+        }
+    }
+
     // Recorded above, so this run is already part of what the summary describes
     let calibration;
     try {
         const full = getCalibration();
         if (full) {
-            const strongest = [...full.exploratory]
-                .filter(e => (e.pAdjusted ?? 1) < 0.10)
-                .sort((x, y) => Math.abs(y.rho) - Math.abs(x.rho))[0];
+            // The signal the bands were built on, so the card's key and bands always agree
+            const strongest = full.exploratory.find(e => e.key === full.signalKey);
             const reels = buildLabelledReels(readHistory());
             calibration = {
                 n: full.n,

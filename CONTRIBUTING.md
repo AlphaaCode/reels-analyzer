@@ -10,7 +10,7 @@ cp .env.example .env.local    # all keys optional
 npm run dev                   # http://localhost:3000
 ```
 
-ffmpeg and ffprobe must be installed (`winget install Gyan.FFmpeg` on Windows, `brew install ffmpeg` on macOS, your package manager on Linux). Set `FFMPEG_PATH` / `FFPROBE_PATH` if they are not on PATH; Windows dev servers often start without ffmpeg on PATH.
+ffmpeg and ffprobe must be installed (`winget install Gyan.FFmpeg` on Windows, `brew install ffmpeg` on macOS, your package manager on Linux); the edit engine needs a build with libass for its `subtitles` filter, which these include. Set `FFMPEG_PATH` / `FFPROBE_PATH` if they are not on PATH; Windows dev servers often start without ffmpeg on PATH.
 
 ## Checks
 
@@ -37,6 +37,12 @@ Everything runs server-side in App Router routes:
   4. **Score** (`src/lib/analysis.ts`): hook 25%, pacing 20%, visual 15%, trending 15%, CTA 15%, rewatch 10%.
 - **Reality Check**: when a reel's real stats are passed as `actual`, the provider also returns `performanceReview`. `parseActual` in the analyze route rejects the whole object if any count is missing or negative; extend it when you add fields.
 - **Calibration** (`src/lib/calibration.ts`, `src/lib/calibrationStore.ts`): Spearman correlations with permutation p-values, Benjamini-Hochberg correction, an unlock gate and a noise floor, over rows in `data/analyses.json`.
+- **Edit engine** (`src/lib/edit/`): a model writes one `edit-plan.json` (`schema/edit-plan.schema.json`) and never touches the video.
+  - `validate.ts` checks the plan against the video (`node tools/check-edit.mjs <plan> <video>`).
+  - `plan.ts` turns it into the pieces of the source the output plays.
+  - `render.ts` renders those pieces in one ffmpeg run (`node tools/render-edit.mjs <plan> <video>`). It writes `exports/{sha256}-{n}.mp4` beside the plan and a before/after diff measured with the same signals.
+  - Word timestamps (`words.ts`) come from Whisper and are cached in `data/words/`.
+  - Burned-in text uses the bundled Noto fonts in `assets/fonts/` (SIL OFL).
 
 ## Rules
 

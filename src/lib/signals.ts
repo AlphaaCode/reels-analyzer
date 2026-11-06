@@ -1,5 +1,7 @@
 // Local, free video signal extraction via ffmpeg/ffprobe — no network, no cost.
 // All invocations use execFile with argument arrays (no shell string interpolation).
+// Node runs this file directly (the edit engine's tools and tests), so its
+// imports are node built-ins, .ts paths and type-only imports.
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -14,7 +16,7 @@ import {
     SAMPLE_FRAME_HEIGHT,
     OPTIMAL_MIN_DURATION,
     OPTIMAL_MAX_DURATION
-} from './constants';
+} from './constants.ts';
 import type { SilenceSpan, TechnicalSignals } from '@/types/analysis';
 
 const execFileAsync = promisify(execFile);
@@ -22,8 +24,8 @@ const MAX_BUFFER = 64 * 1024 * 1024;
 
 // Explicit binary paths keep analysis working even when the dev server was
 // launched from a terminal that doesn't have ffmpeg on its PATH
-const FFMPEG = process.env.FFMPEG_PATH?.trim() || 'ffmpeg';
-const FFPROBE = process.env.FFPROBE_PATH?.trim() || 'ffprobe';
+export const FFMPEG = process.env.FFMPEG_PATH?.trim() || 'ffmpeg';
+export const FFPROBE = process.env.FFPROBE_PATH?.trim() || 'ffprobe';
 
 // Freshly uploaded files can be briefly locked/still flushing on Windows — retry reads
 async function execFileWithRetry(command: string, args: string[], attempts = 3): Promise<{ stdout: string; stderr: string }> {
@@ -45,6 +47,9 @@ interface FfprobeStream {
     height?: number;
     avg_frame_rate?: string;
     r_frame_rate?: string;
+    sample_aspect_ratio?: string;
+    tags?: { rotate?: string };
+    side_data_list?: { rotation?: number }[];
 }
 
 interface FfprobeOutput {
@@ -66,23 +71,45 @@ function reduceAspect(width: number, height: number): string {
     return `${width / divisor}:${height / divisor}`;
 }
 
-export async function extractSignals(videoPath: string): Promise<TechnicalSignals> {
+export interface VideoProbe {
+    duration: number;     // seconds, unrounded
+    width: number;        // coded size; on screen it is swapped when rotation is ±90
+    height: number;
+    rotation: number;     // degrees, from the display matrix
+    sar: string;          // sample aspect ratio, "1:1" when unset
+    fps: number;          // unrounded
+    bitrateKbps: number;
+    hasVideo: boolean;
+    hasAudio: boolean;
+}
+
+export async function probeVideo(videoPath: string): Promise<VideoProbe> {
     const { stdout } = await execFileWithRetry(
         FFPROBE,
         ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', videoPath]
     );
     const probe = JSON.parse(stdout) as FfprobeOutput;
     const video = probe.streams?.find(s => s.codec_type === 'video');
-    const audio = probe.streams?.find(s => s.codec_type === 'audio');
+    const sar = video?.sample_aspect_ratio ?? '';
+    return {
+        duration: parseFloat(probe.format?.duration ?? '') || 0,
+        width: video?.width ?? 0,
+        height: video?.height ?? 0,
+        rotation: video?.side_data_list?.find(data => typeof data.rotation === 'number')?.rotation
+            ?? (Number(video?.tags?.rotate) || 0),
+        sar: /^[1-9]\d*:[1-9]\d*$/.test(sar) ? sar : '1:1',
+        fps: parseFrameRate(video?.avg_frame_rate) || parseFrameRate(video?.r_frame_rate),
+        bitrateKbps: Math.round((parseInt(probe.format?.bit_rate ?? '', 10) || 0) / 1000),
+        hasVideo: Boolean(video),
+        hasAudio: Boolean(probe.streams?.some(s => s.codec_type === 'audio'))
+    };
+}
 
-    const duration = parseFloat(probe.format?.duration ?? '') || 0;
-    const width = video?.width ?? 0;
-    const height = video?.height ?? 0;
-    const fps = Math.round((parseFrameRate(video?.avg_frame_rate) || parseFrameRate(video?.r_frame_rate)) * 10) / 10;
-    const bitrateKbps = Math.round((parseInt(probe.format?.bit_rate ?? '', 10) || 0) / 1000);
+export async function extractSignals(videoPath: string): Promise<TechnicalSignals> {
+    const { duration, width, height, fps, bitrateKbps, hasVideo, hasAudio } = await probeVideo(videoPath);
 
-    const cuts = video && duration > 0 ? await detectSceneCuts(videoPath) : [];
-    const { loudnessLufs, silences } = audio
+    const cuts = hasVideo && duration > 0 ? await detectSceneCuts(videoPath) : [];
+    const { loudnessLufs, silences } = hasAudio
         ? await analyzeAudio(videoPath)
         : { loudnessLufs: null, silences: [] as SilenceSpan[] };
 
@@ -92,11 +119,11 @@ export async function extractSignals(videoPath: string): Promise<TechnicalSignal
         duration: Math.round(duration * 10) / 10,
         width,
         height,
-        fps,
+        fps: Math.round(fps * 10) / 10,
         aspectRatio: reduceAspect(width, height),
         isVertical: height > 0 && Math.abs(width / height - 9 / 16) < 0.05,
         bitrateKbps,
-        hasAudio: Boolean(audio),
+        hasAudio,
         loudnessLufs,
         cutCount,
         cutsPerMinute: duration > 0 ? Math.round((cutCount / (duration / 60)) * 10) / 10 : 0,
@@ -122,13 +149,17 @@ async function detectSceneCuts(videoPath: string): Promise<number[]> {
         .map(match => Math.round(parseFloat(match[1]) * 100) / 100);
 }
 
-// One audio decode pass: silence spans + integrated loudness (EBU R128)
-async function analyzeAudio(videoPath: string): Promise<{ loudnessLufs: number | null; silences: SilenceSpan[] }> {
+// One audio decode pass: silence spans + integrated loudness (EBU R128).
+// The edit engine asks for shorter silences than the signals report.
+export async function analyzeAudio(
+    videoPath: string,
+    minSilenceSeconds = SILENCE_MIN_SECONDS
+): Promise<{ loudnessLufs: number | null; silences: SilenceSpan[] }> {
     const { stderr } = await execFileAsync(
         FFMPEG,
         [
             '-hide_banner', '-i', videoPath,
-            '-af', `silencedetect=noise=${SILENCE_NOISE_DB}dB:d=${SILENCE_MIN_SECONDS},ebur128`,
+            '-af', `silencedetect=noise=${SILENCE_NOISE_DB}dB:d=${minSilenceSeconds},ebur128`,
             '-vn', '-f', 'null', '-'
         ],
         { maxBuffer: MAX_BUFFER, windowsHide: true }

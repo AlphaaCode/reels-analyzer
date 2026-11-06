@@ -14,8 +14,9 @@
 //   WHISPER_MODEL        default whisper-large-v3
 
 import { SAMPLE_FRAME_COUNT } from '../constants';
-import { extractAudioTrack, extractSampleFrames } from '../signals';
+import { extractSampleFrames } from '../signals';
 import { parseModelJson } from '../validate';
+import { transcribe } from '../whisper';
 import { buildPrompt, buildScorePrompt, requestReport, toInsights, withRetries } from './shared';
 import type { AIInsights, AnalysisProvider, ProviderInput } from '@/types/analysis';
 
@@ -23,7 +24,6 @@ import type { AIInsights, AnalysisProvider, ProviderInput } from '@/types/analys
 // ~30-40 tok/s, so a complete answer legitimately takes 2-3 minutes. The
 // job-polling UI absorbs this — don't cut healthy requests short.
 const REQUEST_TIMEOUT_MS = 240 * 1000;
-const WHISPER_TIMEOUT_MS = 60 * 1000;
 // Reasoning models spend tokens thinking before the JSON, so the default is
 // generous — but some endpoints choke on a large max_tokens regardless of what
 // they actually generate (NVIDIA nemotron-nano-12b-v2-vl 500s at 8192 and
@@ -62,37 +62,6 @@ export function getOpenModelConfig(): OpenModelConfig | undefined {
 
 export function isOpenModelConfigured(): boolean {
     return Boolean(getOpenModelConfig());
-}
-
-// Verbatim speech transcript via an OpenAI-compatible /audio/transcriptions
-// endpoint (open-source Whisper on Groq's free tier by default). Optional:
-// any failure just means the model judges from frames + signals alone.
-async function transcribeAudio(videoPath: string): Promise<string | undefined> {
-    const apiKey = process.env.WHISPER_API_KEY?.trim();
-    if (!apiKey) return undefined;
-    const baseUrl = (process.env.WHISPER_BASE_URL?.trim() || 'https://api.groq.com/openai/v1').replace(/\/+$/, '');
-    const model = process.env.WHISPER_MODEL?.trim() || 'whisper-large-v3';
-
-    const audio = await extractAudioTrack(videoPath);
-    if (!audio) return undefined;
-
-    const form = new FormData();
-    form.append('file', new Blob([new Uint8Array(audio)], { type: 'audio/mpeg' }), 'audio.mp3');
-    form.append('model', model);
-    form.append('response_format', 'json');
-
-    const response = await fetch(`${baseUrl}/audio/transcriptions`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}` },
-        body: form,
-        signal: AbortSignal.timeout(WHISPER_TIMEOUT_MS)
-    });
-    if (!response.ok) {
-        throw new Error(`Whisper transcription HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
-    }
-    const parsed = await response.json() as { text?: string };
-    const text = parsed.text?.trim();
-    return text || undefined;
 }
 
 function buildMediaIntro(frameCount: number, transcript: string | undefined): string {
@@ -171,11 +140,13 @@ export const openCompatProvider: AnalysisProvider = {
         const frames = await extractSampleFrames(videoPath, signals.duration, config.maxFrames);
         if (frames.length === 0) throw new Error('Could not sample frames from the video');
 
+        // Verbatim speech transcript (Whisper). Optional: any failure just means
+        // the model judges from frames + signals alone.
         let transcript: string | undefined;
         if (signals.hasAudio) {
             onStage?.('transcript');
             try {
-                transcript = await transcribeAudio(videoPath);
+                transcript = (await transcribe(videoPath))?.text || undefined;
             } catch (error) {
                 console.warn('Whisper transcription failed — continuing without transcript:', error);
             }

@@ -470,3 +470,43 @@ export function calibrate(
         signalBands: strongestSignal ? bandsFor(reels, strongestSignal.key, threshold) : undefined
     };
 }
+
+export type ForecastState = 'locked' | 'low' | 'mid' | 'high';
+
+export interface Forecast {
+    state: ForecastState;
+    signalKey?: string;
+    /** The reel's own value on the validated signal. */
+    value?: number;
+    bandIndex: number;
+    band?: SignalBand;
+    /** The band with the highest values of the signal. */
+    best?: SignalBand;
+}
+
+/**
+ * Where one reel sits on the validated signal: the band it falls in, as low
+ * (first band), high (last band) or mid (any between), or locked when no signal survived (no bands) or the reel has no
+ * value for it. The prediction card and the edit job both call this, so they
+ * can never disagree.
+ */
+export function forecastFor(
+    calibration: { signalKey?: string; signalBands?: SignalBand[] } | undefined,
+    signals: object | undefined
+): Forecast {
+    const signalKey = calibration?.signalKey;
+    const bands = calibration?.signalBands ?? [];
+    const raw = signalKey && signals ? (signals as Record<string, unknown>)[signalKey] : undefined;
+    const value = typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
+    if (!signalKey || value === undefined || bands.length === 0) return { state: 'locked', signalKey, value, bandIndex: -1 };
+    const bandIndex = Math.max(0, bands.findIndex((band, i) => value <= band.max || i === bands.length - 1));
+    return {
+        // First band low, last band high, anything between mid: two bands have no mid
+        state: bandIndex === bands.length - 1 ? 'high' : bandIndex === 0 ? 'low' : 'mid',
+        signalKey,
+        value,
+        bandIndex,
+        band: bands[bandIndex],
+        best: bands[bands.length - 1]
+    };
+}

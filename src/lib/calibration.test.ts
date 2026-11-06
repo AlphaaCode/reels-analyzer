@@ -9,6 +9,7 @@ import {
     benjaminiHochberg,
     buildLabelledReels,
     calibrate,
+    forecastFor,
     MIN_LABELLED,
     permutationP,
     quantile,
@@ -197,4 +198,27 @@ test('a mixture of two models collapses to the dominant instrument', () => {
     ], now);
     assert.equal(rows.length, 3, 'only the dominant instrument should be used');
     assert.ok(!rows.some(r => r.mediaId === 'r4'));
+});
+
+test('forecastFor places a reel in its band, or locks without one', () => {
+    const band = (min: number, max: number) => ({ min, max, count: 5, q25: 1, q50: 2, q75: 3, breakouts: 0 });
+    const calibration = { signalKey: 'cutsPerMinute', signalBands: [band(0, 0), band(0, 3.3), band(3.4, 21.7)] };
+    // A value equal to two bands' max lands in the first: the card's behaviour
+    assert.equal(forecastFor(calibration, { cutsPerMinute: 0 }).state, 'low');
+    assert.equal(forecastFor(calibration, { cutsPerMinute: 2 }).state, 'mid');
+    const high = forecastFor(calibration, { cutsPerMinute: 40 });
+    assert.equal(high.state, 'high');
+    assert.equal(high.band, high.best);
+    assert.equal(forecastFor(calibration, {}).state, 'locked');
+    assert.equal(forecastFor({ signalKey: 'cutsPerMinute', signalBands: [] }, { cutsPerMinute: 2 }).state, 'locked');
+    assert.equal(forecastFor(undefined, { cutsPerMinute: 2 }).state, 'locked');
+});
+
+test('forecastFor: first band low, last band high, every band between mid', () => {
+    const band = (min: number, max: number) => ({ min, max, count: 5, q25: 1, q50: 2, q75: 3, breakouts: 0 });
+    const states = (bands: ReturnType<typeof band>[], values: number[]) =>
+        values.map(v => forecastFor({ signalKey: 'x', signalBands: bands }, { x: v }).state);
+    assert.deepEqual(states([band(0, 5), band(6, 10)], [1, 8]), ['low', 'high']);
+    assert.deepEqual(states([band(0, 3), band(4, 6), band(7, 9)], [1, 5, 8]), ['low', 'mid', 'high']);
+    assert.deepEqual(states([band(0, 3), band(4, 6), band(7, 9), band(10, 12)], [1, 5, 8, 11]), ['low', 'mid', 'mid', 'high']);
 });

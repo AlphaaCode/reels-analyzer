@@ -25,6 +25,8 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [stage, setStage] = useState<AnalysisStage>('signals');
   const [startedAt, setStartedAt] = useState(0);
+  const [analyzedFileId, setAnalyzedFileId] = useState<string | null>(null);
+  const [isEditEstimate, setIsEditEstimate] = useState(false);
 
   const handleFileSelect = async (selectedFile: File) => {
     setFile(selectedFile);
@@ -75,7 +77,9 @@ export default function Home() {
     }
   };
 
-  const runAnalysis = async (fileId: string, actual?: ActualPerformance) => {
+  const runAnalysis = async (fileId: string, actual?: ActualPerformance, editEstimate = false) => {
+    setAnalyzedFileId(fileId);
+    setIsEditEstimate(editEstimate);
     setAnalysisState('analyzing');
     setError(null);
     setStage('signals');
@@ -326,6 +330,9 @@ ${pickText(analysisResult.summary, lang)}
             result={analysisResult}
             onAnalyzeAnother={handleReset}
             onDownloadReport={handleDownloadReport}
+            fileId={analyzedFileId ?? undefined}
+            onReanalyze={editedFileId => runAnalysis(editedFileId, undefined, true)}
+            isEditEstimate={isEditEstimate}
           />
         )}
       </main>

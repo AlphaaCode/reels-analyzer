@@ -12,6 +12,7 @@
 import React from 'react';
 import Image from 'next/image';
 import { useLang, type Lang } from '@/lib/i18n';
+import { forecastFor } from '@/lib/calibration';
 import type { CalibrationSummary, TechnicalSignals } from '@/types/analysis';
 import ReachStrip, { formatCount } from './ReachStrip';
 
@@ -21,18 +22,12 @@ interface PredictionCardProps {
     score: number;
 }
 
-const SIGNAL_LABELS: Record<string, Record<Lang, string>> = {
+export const SIGNAL_LABELS:Record<string, Record<Lang, string>> = {
     cutsPerMinute: { en: 'cuts per minute', ar: 'القطعات في الدقيقة' },
     avgShotSeconds: { en: 'average shot length', ar: 'متوسط طول اللقطة' },
     loudnessLufs: { en: 'loudness', ar: 'مستوى الصوت' },
     duration: { en: 'duration', ar: 'المدة' },
     cutsInFirstThreeSeconds: { en: 'cuts in the first 3 seconds', ar: 'القطعات في أول 3 ثوانٍ' }
-};
-
-const signalValue = (key: string, technical?: TechnicalSignals): number | undefined => {
-    if (!technical) return undefined;
-    const value = (technical as unknown as Record<string, unknown>)[key];
-    return typeof value === 'number' ? value : undefined;
 };
 
 export default function PredictionCard({ calibration, technical, score }: PredictionCardProps) {
@@ -51,18 +46,12 @@ export default function PredictionCard({ calibration, technical, score }: Predic
     }
 
     const { n, reaches, breakoutCount, breakoutThreshold, strongestSignal, signalBands } = calibration;
-    const value = strongestSignal ? signalValue(strongestSignal.key, technical) : undefined;
     const bands = signalBands ?? [];
+    // Which band this reel falls into on the validated signal; the edit job uses the same call
+    const { state, value, bandIndex, band, best } = forecastFor({ signalKey: strongestSignal?.key, signalBands }, technical);
 
-    // Which band this reel falls into on the validated signal
-    const bandIndex = value === undefined || bands.length === 0
-        ? -1
-        : Math.max(0, bands.findIndex((band, i) => value <= band.max || i === bands.length - 1));
-    const band = bandIndex >= 0 ? bands[bandIndex] : undefined;
-    const best = bands.length ? bands[bands.length - 1] : undefined;
-
-    const verdictKey = bandIndex < 0 ? '' : bandIndex === 0 ? 'predClassLow' : bandIndex === 1 ? 'predClassMid' : 'predClassHigh';
-    const verdictTone = bandIndex === 0 ? 'text-amber-300' : bandIndex === 1 ? 'text-gray-100' : 'text-emerald-300';
+    const verdictKey = state === 'low' ? 'predClassLow' : state === 'mid' ? 'predClassMid' : 'predClassHigh';
+    const verdictTone = state === 'low' ? 'text-amber-300' : state === 'mid' ? 'text-gray-100' : 'text-emerald-300';
     const signalName = strongestSignal ? (SIGNAL_LABELS[strongestSignal.key]?.[lang] ?? strongestSignal.key) : '';
 
     return (

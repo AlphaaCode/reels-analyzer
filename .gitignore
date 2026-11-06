@@ -49,6 +49,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.gstack/
 
 # local analysis history + calibration (personal performance data)
 /data/
+
+# local Claude Code permissions (per machine)
+/.claude/settings.local.json

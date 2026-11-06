@@ -58,9 +58,9 @@ test('loading refuses schema keywords the validator does not implement', () => {
         mkdirSync(path.join(root, 'schema'));
         writeFileSync(path.join(root, 'schema', 'report.schema.json'), JSON.stringify({
             type: 'object',
-            properties: { summary: { oneOf: [{ type: 'string' }] } }
+            properties: { summary: { anyOf: [{ type: 'string' }] } }
         }));
-        assert.throws(() => loadReportSchema(root), /unsupported keyword "oneOf"/);
+        assert.throws(() => loadReportSchema(root), /unsupported keyword "anyOf"/);
     } finally {
         rmSync(root, { recursive: true, force: true });
     }

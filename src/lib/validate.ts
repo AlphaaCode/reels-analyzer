@@ -1,8 +1,10 @@
 // The report contract's checker. Validates what a model or agent wrote
 // against schema/report.schema.json plus the rules JSON Schema can't express
 // (no emojis, a real English half and a real Arabic half), and drives the
-// repair loop that sends the errors back. It imports nothing but node:
-// modules on purpose, so tools/check.mjs and the tests run it directly.
+// repair loop that sends the errors back. The edit contract
+// (schema/edit-plan.schema.json, src/lib/edit/validate.ts) reuses the same
+// engine. It imports nothing but node: modules on purpose, so tools/check.mjs
+// and the tests run it directly.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -23,6 +25,7 @@ export interface JsonSchema {
     description?: string;
     $ref?: string;
     $defs?: Record<string, JsonSchema>;
+    oneOf?: JsonSchema[];
 }
 
 export interface Issue {
@@ -47,7 +50,7 @@ export interface ValidateOptions {
 const KEYWORDS = new Set([
     '$schema', '$id', '$comment', '$defs', '$ref', 'title', 'description',
     'type', 'properties', 'required', 'items', 'minItems', 'maxItems',
-    'minLength', 'maxLength', 'minimum', 'maximum', 'enum', 'pattern'
+    'minLength', 'maxLength', 'minimum', 'maximum', 'enum', 'pattern', 'oneOf'
 ]);
 
 // Emoji, pictographs, flags and the invisible emoji modifiers they leave behind
@@ -66,41 +69,56 @@ export const issueKey = (issue: Issue): string => issue.path.split('/')[1] ?? ''
 export const formatIssues = (issues: Issue[]): string =>
     issues.map(issue => `- ${issue.path || '/'}: ${issue.message}`).join('\n');
 
-/** The contract schema with every $ref inlined. Throws on keywords this file doesn't implement. */
-export function loadReportSchema(root = process.cwd()): JsonSchema {
-    const raw = JSON.parse(readFileSync(path.join(root, 'schema', 'report.schema.json'), 'utf8')) as JsonSchema;
-    assertKnownKeywords(raw, '#');
-    return inlineRefs(raw, raw);
+/** What the checker CLIs print: every error and warning with its path, then the tally. */
+export function formatValidation(file: string, { errors, warnings }: Validation): string {
+    const tally = `${errors.length} error(s), ${warnings.length} warning(s)`;
+    return [
+        ...errors.map(issue => `ERROR ${issue.path || '/'}: ${issue.message}`),
+        ...warnings.map(issue => `WARN  ${issue.path || '/'}: ${issue.message}`),
+        errors.length ? `${file}: ${tally}` : `${file}: OK (${tally})`
+    ].join('\n');
 }
 
-function assertKnownKeywords(node: JsonSchema, at: string): void {
+/** A contract schema from schema/ with every $ref inlined. Throws on keywords this file doesn't implement. */
+export function loadSchema(name: string, root = process.cwd()): JsonSchema {
+    const file = `schema/${name}`;
+    const raw = JSON.parse(readFileSync(path.join(root, file), 'utf8')) as JsonSchema;
+    assertKnownKeywords(raw, '#', file);
+    return inlineRefs(raw, raw, file);
+}
+
+export const loadReportSchema = (root = process.cwd()): JsonSchema => loadSchema('report.schema.json', root);
+
+function assertKnownKeywords(node: JsonSchema, at: string, file: string): void {
     for (const key of Object.keys(node)) {
         if (!KEYWORDS.has(key)) {
-            throw new Error(`schema/report.schema.json: unsupported keyword "${key}" at ${at} — implement it in src/lib/validate.ts first`);
+            throw new Error(`${file}: unsupported keyword "${key}" at ${at} — implement it in src/lib/validate.ts first`);
         }
     }
     for (const group of ['properties', '$defs'] as const) {
-        for (const [name, child] of Object.entries(node[group] ?? {})) assertKnownKeywords(child, `${at}/${group}/${name}`);
+        for (const [name, child] of Object.entries(node[group] ?? {})) assertKnownKeywords(child, `${at}/${group}/${name}`, file);
     }
-    if (node.items) assertKnownKeywords(node.items, `${at}/items`);
+    if (node.items) assertKnownKeywords(node.items, `${at}/items`, file);
+    node.oneOf?.forEach((branch, i) => assertKnownKeywords(branch, `${at}/oneOf/${i}`, file));
 }
 
-function inlineRefs(node: JsonSchema, root: JsonSchema): JsonSchema {
+function inlineRefs(node: JsonSchema, root: JsonSchema, file: string): JsonSchema {
     if (node.$ref) {
         const target = node.$ref.startsWith('#/$defs/') ? root.$defs?.[node.$ref.slice('#/$defs/'.length)] : undefined;
-        if (!target) throw new Error(`schema/report.schema.json: cannot resolve $ref ${node.$ref}`);
+        if (!target) throw new Error(`${file}: cannot resolve $ref ${node.$ref}`);
         const siblings = { ...node };
         delete siblings.$ref;
-        return inlineRefs({ ...target, ...siblings }, root);
+        return inlineRefs({ ...target, ...siblings }, root, file);
     }
     const rest = { ...node };
     delete rest.$defs;
     return {
         ...rest,
         ...(node.properties ? {
-            properties: Object.fromEntries(Object.entries(node.properties).map(([key, child]) => [key, inlineRefs(child, root)]))
+            properties: Object.fromEntries(Object.entries(node.properties).map(([key, child]) => [key, inlineRefs(child, root, file)]))
         } : {}),
-        ...(node.items ? { items: inlineRefs(node.items, root) } : {})
+        ...(node.items ? { items: inlineRefs(node.items, root, file) } : {}),
+        ...(node.oneOf ? { oneOf: node.oneOf.map(branch => inlineRefs(branch, root, file)) } : {})
     };
 }
 
@@ -176,6 +194,62 @@ function check(value: unknown, node: JsonSchema, at: string, out: Validation): v
             }
         }
     }
+
+    if (node.oneOf) checkOneOf(value, node.oneOf, at, out);
+}
+
+// A branch's tags: its single-value enums, such as an edit op's kind
+const tagsOf = (branch: JsonSchema): [string, string][] =>
+    Object.entries(branch.properties ?? {})
+        .filter(([, child]) => child.enum?.length === 1)
+        .map(([key, child]) => [key, child.enum![0]]);
+
+// Exactly one branch must match. When none does, the errors come from the
+// branch the value's tags name (an op with kind "cut" is judged as a cut), not
+// from every branch at once.
+function checkOneOf(value: unknown, branches: JsonSchema[], at: string, out: Validation): void {
+    const results = branches.map(branch => {
+        const result: Validation = { errors: [], warnings: [] };
+        check(value, branch, at, result);
+        return result;
+    });
+    const passed = results.filter(result => result.errors.length === 0);
+    if (passed.length === 1) {
+        out.warnings.push(...passed[0].warnings);
+        return;
+    }
+    if (passed.length > 1) {
+        out.errors.push({ path: at, message: 'matches more than one allowed shape' });
+        return;
+    }
+
+    const object = kindOf(value) === 'object' ? value as Record<string, unknown> : {};
+    const meant = branches.findIndex(branch => {
+        const tags = tagsOf(branch);
+        return tags.length > 0 && tags.every(([key, tag]) => object[key] === tag);
+    });
+    if (meant !== -1) {
+        out.errors.push(...results[meant].errors);
+        out.warnings.push(...results[meant].warnings);
+        return;
+    }
+    const keys = [...new Set(branches.flatMap(branch => tagsOf(branch).map(([key]) => key)))];
+    if (keys.length !== 1) {
+        out.errors.push({ path: at, message: 'matches none of the allowed shapes' });
+        return;
+    }
+    const [key] = keys;
+    const options = branches.flatMap(branch => tagsOf(branch).filter(([name]) => name === key).map(([, tag]) => JSON.stringify(tag)));
+    out.errors.push(key in object
+        ? { path: `${at}/${key}`, message: `must be one of ${options.join(', ')}, got ${JSON.stringify(object[key])}` }
+        : { path: `${at}/${key}`, message: 'is missing' });
+}
+
+/** Check any value against a loaded contract schema. */
+export function validateValue(value: unknown, schema: JsonSchema): Validation {
+    const out: Validation = { errors: [], warnings: [] };
+    check(value, schema, '', out);
+    return out;
 }
 
 /** Check a report (or a scores-only answer) against the contract. */
